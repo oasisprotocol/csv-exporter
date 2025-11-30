@@ -5,7 +5,7 @@ import { fetchEvents } from "../fetchEvents";
 import { NEXUS_API } from "../constants";
 
 const AccountingEvents = () => {
-  const [year, setYear] = useState("2024");
+  const [year, setYear] = useState("2025");
   const [addressError, setAddressError] = useState("");
   const [address, setAddress] = useState("");
   const [layer, setLayer] = useState("sapphire");
@@ -48,15 +48,7 @@ const AccountingEvents = () => {
 
       const after = `${year}-01-01T00:00:00Z`;
       const before = `${parseInt(year) + 1}-01-01T00:00:00Z`;
-      const events = await fetchEvents(
-        NEXUS_API,
-        address,
-        year,
-        before,
-        after,
-        layer,
-        setProgress
-      );
+      const events = await fetchEvents(NEXUS_API, address, year, before, after, layer, setProgress);
       setRows(events);
       if (events.length === 0) {
         setProgress("No events found for this address and time period.");
@@ -111,7 +103,20 @@ const AccountingEvents = () => {
           textAlign: "center",
         }}
       >
-        Accounting Events
+        Accounting Events{" "}
+        <span
+          style={{
+            fontSize: "12px",
+            fontWeight: "500",
+            backgroundColor: "#fef3c7",
+            color: "#92400e",
+            padding: "2px 8px",
+            borderRadius: "4px",
+            verticalAlign: "middle",
+          }}
+        >
+          Beta
+        </span>
       </h1>
       <p
         style={{
@@ -122,13 +127,12 @@ const AccountingEvents = () => {
           marginBottom: "25px",
         }}
       >
-        Fetch events for Sapphire or Consensus in CSV format.
+        Export all token balance changes for your account. Note: staking rewards are not included
+        unless undelegated. Use the Staking Rewards tool to track delegation earnings.
       </p>
 
       <label style={{ display: "block", marginBottom: "15px" }}>
-        <span style={{ color: "#4b5563", fontSize: "14px" }}>
-          Enter Account Address:
-        </span>
+        <span style={{ color: "#4b5563", fontSize: "14px" }}>Enter Account Address:</span>
         <input
           type="text"
           value={address}
@@ -146,16 +150,10 @@ const AccountingEvents = () => {
             boxSizing: "border-box",
           }}
         />
-        {addressError && (
-          <span style={{ color: "red", fontSize: "12px" }}>
-            {addressError}
-          </span>
-        )}
+        {addressError && <span style={{ color: "red", fontSize: "12px" }}>{addressError}</span>}
       </label>
       <label style={{ display: "block", marginBottom: "15px" }}>
-        <span style={{ color: "#4b5563", fontSize: "14px" }}>
-          Select Layer:
-        </span>
+        <span style={{ color: "#4b5563", fontSize: "14px" }}>Select Layer:</span>
         <select
           value={layer}
           onChange={(e) => setLayer(e.target.value)}
@@ -177,9 +175,7 @@ const AccountingEvents = () => {
         </select>
       </label>
       <label>
-        <span style={{ color: "#4b5563", fontSize: "14px" }}>
-          Select Year:
-        </span>
+        <span style={{ color: "#4b5563", fontSize: "14px" }}>Select Year:</span>
         <select
           value={year}
           onChange={(e) => setYear(e.target.value)}
@@ -195,7 +191,6 @@ const AccountingEvents = () => {
         >
           <option value="2025">2025</option>
           <option value="2024">2024</option>
-          <option value="2023">2023</option>
         </select>
       </label>
       <br />
@@ -204,7 +199,8 @@ const AccountingEvents = () => {
         onClick={handleFetch}
         disabled={addressError !== "" || address === "" || isLoading}
         style={{
-          backgroundColor: addressError === "" && address !== "" && !isLoading ? "#2563eb" : "#d1d5db",
+          backgroundColor:
+            addressError === "" && address !== "" && !isLoading ? "#2563eb" : "#d1d5db",
           color: addressError === "" && address !== "" && !isLoading ? "#ffffff" : "#9ca3af",
           padding: "10px 20px",
           borderRadius: "5px",
@@ -218,9 +214,7 @@ const AccountingEvents = () => {
       >
         {isLoading ? "Fetching..." : "Fetch Data"}
       </button>
-      <p style={{ color: "#6b7280", fontSize: "14px", textAlign: "center" }}>
-        {progress}
-      </p>
+      <p style={{ color: "#6b7280", fontSize: "14px", textAlign: "center" }}>{progress}</p>
       <p
         style={{
           color: "#9ca3af",
@@ -230,8 +224,8 @@ const AccountingEvents = () => {
           marginBottom: "20px",
         }}
       >
-        This tool retrieves data for informational purposes and may not
-        reflect official records.
+        Experimental: Data is provided as-is without warranty. Please verify all data independently
+        before use.
       </p>
       {rows.length > 0 && (
         <button

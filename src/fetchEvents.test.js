@@ -338,22 +338,14 @@ describe("Accounting Events Calculations", () => {
         { timestamp: "2025-01-01T00:00:00Z", id: 5 },
       ];
 
-      const filtered = filterByTimestamp(
-        events,
-        "2024-01-01T00:00:00Z",
-        "2025-01-01T00:00:00Z"
-      );
+      const filtered = filterByTimestamp(events, "2024-01-01T00:00:00Z", "2025-01-01T00:00:00Z");
 
       expect(filtered.length).toBe(3);
       expect(filtered.map((e) => e.id)).toEqual([2, 3, 4]);
     });
 
     it("should handle empty events array", () => {
-      const filtered = filterByTimestamp(
-        [],
-        "2024-01-01T00:00:00Z",
-        "2025-01-01T00:00:00Z"
-      );
+      const filtered = filterByTimestamp([], "2024-01-01T00:00:00Z", "2025-01-01T00:00:00Z");
       expect(filtered).toEqual([]);
     });
   });
@@ -405,8 +397,7 @@ describe("Accounting Events Calculations", () => {
       };
 
       const needsMorePages =
-        (response.is_total_count_clipped === true &&
-          response.total_count >= 1000) ||
+        (response.is_total_count_clipped === true && response.total_count >= 1000) ||
         response.total_count > 1000;
 
       expect(needsMorePages).toBe(true);
@@ -420,8 +411,7 @@ describe("Accounting Events Calculations", () => {
       };
 
       const needsMorePages =
-        (response.is_total_count_clipped === true &&
-          response.total_count >= 1000) ||
+        (response.is_total_count_clipped === true && response.total_count >= 1000) ||
         response.total_count > 1000;
 
       expect(needsMorePages).toBe(true);
@@ -435,8 +425,7 @@ describe("Accounting Events Calculations", () => {
       };
 
       const needsMorePages =
-        (response.is_total_count_clipped === true &&
-          response.total_count >= 1000) ||
+        (response.is_total_count_clipped === true && response.total_count >= 1000) ||
         response.total_count > 1000;
 
       expect(needsMorePages).toBe(false);

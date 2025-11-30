@@ -46,13 +46,13 @@ const Layout = () => {
         <NavLink
           to="/"
           end
-          style={({ isActive }) => isActive ? activeLinkStyle : inactiveLinkStyle}
+          style={({ isActive }) => (isActive ? activeLinkStyle : inactiveLinkStyle)}
         >
           Accounting Events
         </NavLink>
         <NavLink
           to="/staking-rewards"
-          style={({ isActive }) => isActive ? activeLinkStyle : inactiveLinkStyle}
+          style={({ isActive }) => (isActive ? activeLinkStyle : inactiveLinkStyle)}
         >
           Staking Rewards
         </NavLink>

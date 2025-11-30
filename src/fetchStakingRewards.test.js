@@ -2,6 +2,121 @@
  * Tests for staking rewards calculation logic
  */
 
+describe("fetchHistoryAtEpoch", () => {
+  it("should use narrow from/to range to fetch specific epoch", () => {
+    // This tests the logic of the narrow range calculation
+    const targetEpoch = 37690;
+    const from = Math.max(1, targetEpoch - 10);
+    const to = targetEpoch + 10;
+
+    expect(from).toBe(37680);
+    expect(to).toBe(37700);
+    // Range is only 21 epochs, guaranteed to fit in one API call
+    expect(to - from + 1).toBeLessThanOrEqual(50);
+  });
+
+  it("should handle edge case near epoch 0", () => {
+    const targetEpoch = 5;
+    const from = Math.max(1, targetEpoch - 10);
+    const to = targetEpoch + 10;
+
+    expect(from).toBe(1); // Clamped to 1, not -5
+    expect(to).toBe(15);
+  });
+});
+
+describe("Integration test for oasis1qpnzqwj58m48sra4uuvazpqnw0zwlqfvnvjctldl", () => {
+  // This address has one delegation made in Nov 2022 to validator oasis1qq3xrq0urs8qcffhvmhfhz4p0mu7ewc8rscnlwxe
+  // shares: 138906201889790
+  // For 2024 yearly: earned should NOT equal total_value
+
+  it("should compute initial shares correctly from event", () => {
+    const event = {
+      body: {
+        amount: "182702800000000",
+        escrow: "oasis1qq3xrq0urs8qcffhvmhfhz4p0mu7ewc8rscnlwxe",
+        new_shares: "138906201889790",
+        owner: "oasis1qpnzqwj58m48sra4uuvazpqnw0zwlqfvnvjctldl",
+      },
+      block: 11272194,
+      // Note: no epoch field!
+    };
+
+    const myAddress = "oasis1qpnzqwj58m48sra4uuvazpqnw0zwlqfvnvjctldl";
+    const startEpoch = 28809; // 2024
+
+    // Check owner filter
+    const ownerMatches = event.body.owner.toLowerCase() === myAddress.toLowerCase();
+    expect(ownerMatches).toBe(true);
+
+    // Check epoch filter for prior events (epoch <= startEpoch)
+    const eventEpoch = event.body?.epoch || 0;
+    expect(eventEpoch).toBe(0); // No epoch field, defaults to 0
+    expect(eventEpoch <= startEpoch).toBe(true); // Should be in priorAddEvents
+
+    // Extract shares
+    const shares = BigInt(event.body.new_shares);
+    expect(shares.toString()).toBe("138906201889790");
+  });
+
+  it("should compute prevTotalValue correctly from history", () => {
+    const userShares = BigInt("138906201889790");
+
+    // History entry at epoch 28809 (from real API)
+    const historyEntry = {
+      active_balance: "357481115089462727",
+      active_shares: "258713897053065732",
+      epoch: 28809,
+    };
+
+    // calculateTotalValue = (userShares * balance) / shares
+    const balance = BigInt(historyEntry.active_balance);
+    const validatorShares = BigInt(historyEntry.active_shares);
+    const totalValue = (userShares * balance) / validatorShares;
+
+    // This should be a significant value, not 0!
+    expect(totalValue > 0n).toBe(true);
+
+    // 138906201889790 * 357481115089462727 / 258713897053065732
+    // ≈ 191.9 ROSE (in base units: ~191900000000)
+    expect(totalValue > BigInt("190000000000")).toBe(true);
+  });
+
+  it("should have earned != total_value for long-term delegation", () => {
+    const userShares = BigInt("138906201889790");
+
+    // History at startEpoch (28809)
+    const historyAtStart = {
+      active_balance: "357481115089462727",
+      active_shares: "258713897053065732",
+    };
+
+    // History at endEpoch (37689) - would need real data
+    // For now, simulate ~10% growth
+    const historyAtEnd = {
+      active_balance: "393229226598409000", // ~10% more
+      active_shares: "258713897053065732", // shares stay same
+    };
+
+    const prevTotalValue =
+      (userShares * BigInt(historyAtStart.active_balance)) / BigInt(historyAtStart.active_shares);
+    const totalValue =
+      (userShares * BigInt(historyAtEnd.active_balance)) / BigInt(historyAtEnd.active_shares);
+
+    // No events during year
+    const periodDelegationValue = 0n;
+    const periodUndelegationValue = 0n;
+
+    const earned = totalValue - prevTotalValue - periodDelegationValue + periodUndelegationValue;
+
+    // earned should NOT equal totalValue
+    expect(earned).not.toBe(totalValue);
+    // earned should be the growth (~10% of prevTotalValue)
+    expect(earned > 0n).toBe(true);
+    expect(earned < totalValue).toBe(true);
+  });
+});
+
 describe("Staking Rewards Calculations", () => {
   describe("calculateShareValue", () => {
     // share_value = (active_balance * 1e18) / active_shares
@@ -114,7 +229,7 @@ describe("Staking Rewards Calculations", () => {
   });
 
   describe("total value calculation", () => {
-    it("should calculate total_value = num_shares * share_value / 1e18", () => {
+    it("should calculate delegation_value = shares * share_price / 1e18", () => {
       const numShares = BigInt("1000000000000"); // 1 trillion shares
       const shareValueScaled = BigInt("1391000000000000000"); // 1.391 * 1e18
       const totalValue = (numShares * shareValueScaled) / BigInt(1e18);
@@ -135,9 +250,8 @@ describe("Staking Rewards Calculations", () => {
       const periodDelegationValue = 0n;
       const periodUndelegationValue = 0n;
 
-      const earned = currentTotalValue - prevTotalValue
-        - periodDelegationValue
-        + periodUndelegationValue;
+      const earned =
+        currentTotalValue - prevTotalValue - periodDelegationValue + periodUndelegationValue;
 
       expect(earned.toString()).toBe("10000000000");
     });
@@ -151,9 +265,8 @@ describe("Staking Rewards Calculations", () => {
       const periodDelegationValue = BigInt("1000");
       const periodUndelegationValue = 0n;
 
-      const earned = currentTotalValue - prevTotalValue
-        - periodDelegationValue
-        + periodUndelegationValue;
+      const earned =
+        currentTotalValue - prevTotalValue - periodDelegationValue + periodUndelegationValue;
 
       expect(earned.toString()).toBe("100");
     });
@@ -167,9 +280,8 @@ describe("Staking Rewards Calculations", () => {
       const periodDelegationValue = 0n;
       const periodUndelegationValue = BigInt("1000");
 
-      const earned = currentTotalValue - prevTotalValue
-        - periodDelegationValue
-        + periodUndelegationValue;
+      const earned =
+        currentTotalValue - prevTotalValue - periodDelegationValue + periodUndelegationValue;
 
       expect(earned.toString()).toBe("50");
     });
@@ -184,9 +296,8 @@ describe("Staking Rewards Calculations", () => {
       const periodDelegationValue = BigInt("500");
       const periodUndelegationValue = BigInt("400");
 
-      const earned = currentTotalValue - prevTotalValue
-        - periodDelegationValue
-        + periodUndelegationValue;
+      const earned =
+        currentTotalValue - prevTotalValue - periodDelegationValue + periodUndelegationValue;
 
       expect(earned.toString()).toBe("0");
     });
@@ -198,9 +309,8 @@ describe("Staking Rewards Calculations", () => {
       const periodDelegationValue = 0n;
       const periodUndelegationValue = 0n;
 
-      const earned = currentTotalValue - prevTotalValue
-        - periodDelegationValue
-        + periodUndelegationValue;
+      const earned =
+        currentTotalValue - prevTotalValue - periodDelegationValue + periodUndelegationValue;
 
       expect(earned.toString()).toBe("-100");
     });
@@ -289,13 +399,8 @@ describe("Staking Rewards Calculations", () => {
 
   describe("shares tracking with initial state", () => {
     it("should initialize shares from prior events", () => {
-      const priorAddEvents = [
-        { shares: BigInt("1000") },
-        { shares: BigInt("500") },
-      ];
-      const priorDebondEvents = [
-        { shares: BigInt("200") },
-      ];
+      const priorAddEvents = [{ shares: BigInt("1000") }, { shares: BigInt("500") }];
+      const priorDebondEvents = [{ shares: BigInt("200") }];
 
       let shares = 0n;
       for (const ev of priorAddEvents) {
@@ -347,7 +452,7 @@ describe("Staking Rewards Calculations", () => {
       const startEpoch = 1000;
       const endEpoch = 2000;
       const events = [
-        { epoch: 500 },  // before
+        { epoch: 500 }, // before
         { epoch: 1000 }, // at start
         { epoch: 1500 }, // within
         { epoch: 2000 }, // at end
@@ -359,22 +464,17 @@ describe("Staking Rewards Calculations", () => {
       });
 
       expect(filtered.length).toBe(3);
-      expect(filtered.map(e => e.epoch)).toEqual([1000, 1500, 2000]);
+      expect(filtered.map((e) => e.epoch)).toEqual([1000, 1500, 2000]);
     });
 
     it("should get prior events for initial state", () => {
       const startEpoch = 1000;
-      const events = [
-        { epoch: 500 },
-        { epoch: 800 },
-        { epoch: 1000 },
-        { epoch: 1500 },
-      ];
+      const events = [{ epoch: 500 }, { epoch: 800 }, { epoch: 1000 }, { epoch: 1500 }];
 
       const priorEvents = events.filter((ev) => ev.epoch < startEpoch);
 
       expect(priorEvents.length).toBe(2);
-      expect(priorEvents.map(e => e.epoch)).toEqual([500, 800]);
+      expect(priorEvents.map((e) => e.epoch)).toEqual([500, 800]);
     });
   });
 

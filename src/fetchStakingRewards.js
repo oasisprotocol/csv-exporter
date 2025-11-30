@@ -1,136 +1,27 @@
 import axios from "axios";
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+import { paginatedFetch, normalizeAddress } from "./utils";
 
 /**
  * Fetches staking rewards data for a given address and year.
- *
- * Algorithm:
- * 1. Find epoch range for the year
- * 2. Fetch initial delegation state at the start of the year
- * 3. Fetch delegation events (add_escrow, debonding_start) for the year
- * 4. Identify all validators the user delegated to
- * 5. Fetch validator history (share values per epoch) for each validator
- * 6. Build time-sliced data (per epoch, day, week, or month)
- * 7. Calculate earned rewards using the formula:
- *    earned = (num_shares_end × share_value_end) - (num_shares_start × share_value_start)
- *           - Σ(delegations × share_value_at_delegation)
- *           + Σ(undelegations × share_value_at_undelegation)
  */
+
+const ROSE_DECIMALS = 9;
 
 /**
- * Fetch all events with pagination
+ * Convert base units to ROSE (human readable string with decimals)
+ * @param {BigInt} baseUnits - value in nROSE (1e-9 ROSE)
+ * @param {number} extraDecimals - additional decimal places to shift (e.g., 18 for scaled values)
  */
-const fetchAllEvents = async (NEXUS_API, address, type) => {
-  let allEvents = [];
-  let offset = 0;
-  const limit = 1000;
-
-  while (true) {
-    const response = await axios.get(`${NEXUS_API}/consensus/events`, {
-      params: {
-        rel: address,
-        type: type,
-        limit: limit,
-        offset: offset,
-      },
-    });
-
-    const events = response.data.events || [];
-    allEvents = [...allEvents, ...events];
-
-    // Fix pagination: check if we got a full page and there might be more
-    if (
-      events.length === limit &&
-      (response.data.is_total_count_clipped === true ||
-        response.data.total_count > offset + events.length)
-    ) {
-      offset += events.length;
-      await sleep(100);
-    } else {
-      break;
-    }
-  }
-
-  return allEvents;
-};
-
-/**
- * Fetch validator history for a given epoch range
- */
-const fetchValidatorHistory = async (NEXUS_API, validatorAddress, fromEpoch, toEpoch) => {
-  let allHistory = [];
-  let offset = 0;
-  const limit = 1000;
-
-  while (true) {
-    const response = await axios.get(
-      `${NEXUS_API}/consensus/validators/${validatorAddress}/history`,
-      {
-        params: {
-          from: fromEpoch,
-          to: toEpoch,
-          limit: limit,
-          offset: offset,
-        },
-      }
-    );
-
-    const history = response.data.history || [];
-    allHistory = [...allHistory, ...history];
-
-    if (
-      history.length === limit &&
-      (response.data.is_total_count_clipped === true ||
-        response.data.total_count > offset + history.length)
-    ) {
-      offset += history.length;
-      await sleep(100);
-    } else {
-      break;
-    }
-  }
-
-  // Sort by epoch ascending for easier lookup
-  allHistory.sort((a, b) => a.epoch - b.epoch);
-  return allHistory;
-};
-
-/**
- * Fetch current delegations for an address
- */
-const fetchDelegations = async (NEXUS_API, address) => {
-  let allDelegations = [];
-  let offset = 0;
-  const limit = 1000;
-
-  while (true) {
-    const response = await axios.get(
-      `${NEXUS_API}/consensus/accounts/${address}/delegations`,
-      {
-        params: {
-          limit: limit,
-          offset: offset,
-        },
-      }
-    );
-
-    const delegations = response.data.delegations || [];
-    allDelegations = [...allDelegations, ...delegations];
-
-    if (
-      delegations.length === limit &&
-      (response.data.is_total_count_clipped === true ||
-        response.data.total_count > offset + delegations.length)
-    ) {
-      offset += delegations.length;
-      await sleep(100);
-    } else {
-      break;
-    }
-  }
-
-  return allDelegations;
+const toRose = (baseUnits, extraDecimals = 0) => {
+  const totalDecimals = ROSE_DECIMALS + extraDecimals;
+  const str = baseUnits.toString();
+  const isNegative = str.startsWith("-");
+  const absStr = isNegative ? str.slice(1) : str;
+  const padded = absStr.padStart(totalDecimals + 1, "0");
+  const intPart = padded.slice(0, -totalDecimals) || "0";
+  const decPart = padded.slice(-totalDecimals).replace(/0+$/, "") || "0";
+  const result = decPart === "0" ? intPart : `${intPart}.${decPart}`;
+  return isNegative ? `-${result}` : result;
 };
 
 /**
@@ -146,85 +37,59 @@ const fetchEpochInfo = async (NEXUS_API, epochId) => {
  */
 const fetchBlockTimestamp = async (NEXUS_API, height) => {
   const response = await axios.get(`${NEXUS_API}/consensus/blocks/${height}`);
-  return response.data.timestamp;
+  return response.data?.timestamp;
+};
+
+// Hardcoded epoch ranges for supported years.
+// These values are fixed for completed years and won't change.
+// 2024: epoch 28809 (Jan 1 2024 01:58:02 UTC) -> epoch 37689 (Dec 31 2024 23:24:20 UTC)
+// 2025: epoch 37690 (Jan 1 2025 00:23:11 UTC) -> ongoing (fetches latest epoch)
+const EPOCH_RANGES = {
+  2024: { startEpoch: 28809, endEpoch: 37689 },
+  2025: { startEpoch: 37690, endEpoch: null }, // endEpoch fetched dynamically
 };
 
 /**
- * Find epochs for a given year using binary search
+ * Get epochs for a given year (hardcoded for performance)
  */
-const findEpochsForYear = async (NEXUS_API, year, setProgress) => {
-  setProgress(`Finding epochs for ${year}...`);
-
-  const yearStart = new Date(`${year}-01-01T00:00:00Z`).getTime();
-  const yearEnd = new Date(`${parseInt(year) + 1}-01-01T00:00:00Z`).getTime();
-
-  // Get the latest epoch
-  const latestResponse = await axios.get(`${NEXUS_API}/consensus/epochs`, {
-    params: { limit: 1 },
-  });
-  const latestEpoch = latestResponse.data.epochs[0].id;
-
-  // Binary search for start epoch (first epoch >= yearStart)
-  let low = 1;
-  let high = latestEpoch;
-  let startEpoch = null;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    try {
-      const epochInfo = await fetchEpochInfo(NEXUS_API, mid);
-      const blockTimestamp = await fetchBlockTimestamp(NEXUS_API, epochInfo.start_height);
-      const epochTime = new Date(blockTimestamp).getTime();
-
-      if (epochTime < yearStart) {
-        low = mid + 1;
-      } else {
-        startEpoch = mid;
-        high = mid - 1;
-      }
-    } catch {
-      low = mid + 1;
-    }
-    await sleep(50);
+const getEpochsForYear = async (NEXUS_API, year) => {
+  const range = EPOCH_RANGES[year];
+  if (!range) {
+    return { startEpoch: null, endEpoch: null };
   }
 
-  // Binary search for end epoch (last epoch < yearEnd)
-  low = startEpoch || 1;
-  high = latestEpoch;
-  let endEpoch = latestEpoch;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    try {
-      const epochInfo = await fetchEpochInfo(NEXUS_API, mid);
-      const blockTimestamp = await fetchBlockTimestamp(NEXUS_API, epochInfo.start_height);
-      const epochTime = new Date(blockTimestamp).getTime();
-
-      if (epochTime < yearEnd) {
-        endEpoch = mid;
-        low = mid + 1;
-      } else {
-        high = mid - 1;
-      }
-    } catch {
-      high = mid - 1;
-    }
-    await sleep(50);
+  let endEpoch = range.endEpoch;
+  if (endEpoch === null) {
+    // Fetch latest epoch for current/incomplete year
+    const latestResponse = await axios.get(`${NEXUS_API}/consensus/epochs`, {
+      params: { limit: 1 },
+    });
+    endEpoch = latestResponse.data?.epochs?.[0]?.id;
   }
 
-  return { startEpoch, endEpoch };
+  return { startEpoch: range.startEpoch, endEpoch };
 };
 
 /**
- * Calculate share value from validator history entry
- * share_value = active_balance / active_shares
- * Returns scaled by 1e18 for precision
+ * Calculate share value from validator history entry (scaled by 1e18 for display)
  */
 const calculateShareValue = (historyEntry) => {
-  const balance = BigInt(historyEntry.active_balance || "0");
-  const shares = BigInt(historyEntry.active_shares || "1");
+  const balance = BigInt(historyEntry?.active_balance || "0");
+  const shares = BigInt(historyEntry?.active_shares || "1");
   if (shares === 0n) return 0n;
   return (balance * BigInt(1e18)) / shares;
+};
+
+/**
+ * Calculate total value for user shares directly (more precise - single division)
+ * totalValue = (userShares * active_balance) / active_shares
+ */
+const calculateTotalValue = (userShares, historyEntry) => {
+  if (!historyEntry) return 0n;
+  const balance = BigInt(historyEntry?.active_balance || "0");
+  const shares = BigInt(historyEntry?.active_shares || "1");
+  if (shares === 0n) return 0n;
+  return (userShares * balance) / shares;
 };
 
 /**
@@ -233,7 +98,6 @@ const calculateShareValue = (historyEntry) => {
 const findHistoryEntryForEpoch = (history, targetEpoch) => {
   if (!history || history.length === 0) return null;
 
-  // Binary search for the closest epoch <= targetEpoch
   let low = 0;
   let high = history.length - 1;
   let result = null;
@@ -252,18 +116,33 @@ const findHistoryEntryForEpoch = (history, targetEpoch) => {
 };
 
 /**
+ * Fetch validator history at a specific epoch using narrow from/to range.
+ * This avoids pagination issues since we only need a small window.
+ */
+const fetchHistoryAtEpoch = async (NEXUS_API, validator, targetEpoch) => {
+  const response = await axios.get(`${NEXUS_API}/consensus/validators/${validator}/history`, {
+    params: {
+      from: Math.max(1, targetEpoch - 10),
+      to: targetEpoch + 10,
+      limit: 50,
+    },
+  });
+  const history = response.data?.history || [];
+  // Sort ascending and find the entry at or before targetEpoch
+  history.sort((a, b) => a.epoch - b.epoch);
+  return findHistoryEntryForEpoch(history, targetEpoch);
+};
+
+/**
  * Main function to fetch staking rewards
  */
-export const fetchStakingRewards = async (
-  NEXUS_API,
-  address,
-  year,
-  granularity,
-  setProgress
-) => {
+export const fetchStakingRewards = async (NEXUS_API, address, year, granularity, setProgress) => {
+  const warnings = [];
+  const normalizedAddress = normalizeAddress(address);
+
   try {
-    // Step 1: Find epoch range for the year
-    const { startEpoch, endEpoch } = await findEpochsForYear(NEXUS_API, year, setProgress);
+    // Step 1: Get epoch range for the year
+    const { startEpoch, endEpoch } = await getEpochsForYear(NEXUS_API, year);
 
     if (!startEpoch) {
       setProgress("Could not determine epoch range for this year.");
@@ -272,166 +151,183 @@ export const fetchStakingRewards = async (
 
     setProgress(`Epoch range: ${startEpoch} - ${endEpoch}. Fetching delegation events...`);
 
-    // Step 2: Fetch all delegation events
-    const addEscrowEvents = await fetchAllEvents(
-      NEXUS_API,
-      address,
-      "staking.escrow.add"
+    // Step 2: Fetch all delegation events using unified pagination
+    const { items: addEscrowEvents } = await paginatedFetch(
+      `${NEXUS_API}/consensus/events`,
+      { rel: address, type: "staking.escrow.add" },
+      "events"
     );
 
-    const debondingEvents = await fetchAllEvents(
-      NEXUS_API,
-      address,
-      "staking.escrow.debonding_start"
+    const { items: debondingEvents } = await paginatedFetch(
+      `${NEXUS_API}/consensus/events`,
+      { rel: address, type: "staking.escrow.debonding_start" },
+      "events"
     );
 
-    // Step 3: Filter events by owner and by epoch range
+    // Step 3: Filter events during the year (after startEpoch)
     const relevantAddEvents = addEscrowEvents.filter((ev) => {
-      if (ev.body.owner.toLowerCase() !== address.toLowerCase()) return false;
-      const eventEpoch = ev.body.epoch || 0;
-      return eventEpoch >= startEpoch && eventEpoch <= endEpoch;
+      if (normalizeAddress(ev.body?.owner) !== normalizedAddress) return false;
+      const eventEpoch = ev.body?.epoch || 0;
+      return eventEpoch > startEpoch && eventEpoch <= endEpoch;
     });
 
     const relevantDebondEvents = debondingEvents.filter((ev) => {
-      if (ev.body.owner.toLowerCase() !== address.toLowerCase()) return false;
-      const eventEpoch = ev.body.epoch || 0;
-      return eventEpoch >= startEpoch && eventEpoch <= endEpoch;
+      if (normalizeAddress(ev.body?.owner) !== normalizedAddress) return false;
+      const eventEpoch = ev.body?.epoch || 0;
+      return eventEpoch > startEpoch && eventEpoch <= endEpoch;
     });
 
-    // Also get events BEFORE the year to compute initial state
-    const priorAddEvents = addEscrowEvents.filter((ev) => {
-      if (ev.body.owner.toLowerCase() !== address.toLowerCase()) return false;
-      const eventEpoch = ev.body.epoch || 0;
-      return eventEpoch < startEpoch;
-    });
+    setProgress(
+      `Found ${relevantAddEvents.length} delegations and ${relevantDebondEvents.length} undelegations in ${year}`
+    );
 
-    const priorDebondEvents = debondingEvents.filter((ev) => {
-      if (ev.body.owner.toLowerCase() !== address.toLowerCase()) return false;
-      const eventEpoch = ev.body.epoch || 0;
-      return eventEpoch < startEpoch;
-    });
-
-    setProgress(`Found ${relevantAddEvents.length} delegations and ${relevantDebondEvents.length} undelegations in ${year}`);
-
-    // Step 4: Find all unique validators (from all events + current delegations)
-    const validatorSet = new Set();
-
-    for (const ev of [...addEscrowEvents, ...debondingEvents]) {
-      if (ev.body.owner.toLowerCase() === address.toLowerCase()) {
-        validatorSet.add(ev.body.escrow.toLowerCase());
-      }
-    }
-
-    // Also fetch current delegations to catch validators we're still delegated to
+    // Step 4: Fetch current delegations (reliable source of truth)
     setProgress("Fetching current delegations...");
-    const currentDelegations = await fetchDelegations(NEXUS_API, address);
+    const { items: currentDelegations } = await paginatedFetch(
+      `${NEXUS_API}/consensus/accounts/${address}/delegations`,
+      {},
+      "delegations"
+    );
+
+    // Build current shares map
+    const currentSharesPerValidator = {};
     for (const del of currentDelegations) {
-      if (del.validator) {
-        validatorSet.add(del.validator.toLowerCase());
+      if (del.validator && del.shares) {
+        const validator = normalizeAddress(del.validator);
+        currentSharesPerValidator[validator] = BigInt(del.shares);
       }
     }
 
-    const validators = Array.from(validatorSet);
-
-    if (validators.length === 0) {
-      setProgress("No staking activity found for this address.");
-      return [];
-    }
-
-    setProgress(`Found ${validators.length} validators. Fetching validator histories...`);
-
-    // Step 5: Fetch validator histories
-    const validatorHistories = {};
-    for (let i = 0; i < validators.length; i++) {
-      const validator = validators[i];
-      setProgress(`Fetching history for validator ${i + 1}/${validators.length}...`);
-
-      // Fetch history for slightly before start to get initial share values
-      const history = await fetchValidatorHistory(
-        NEXUS_API,
-        validator,
-        Math.max(1, startEpoch - 100),
-        endEpoch
-      );
-      validatorHistories[validator] = history;
-      await sleep(100);
-    }
-
-    // Step 6: Compute initial shares per validator from prior events
+    // Step 5: Compute shares at startEpoch by working backwards from current
+    // initial_shares = current_shares - added_during_year + removed_during_year
     setProgress("Computing initial state...");
     const sharesPerValidator = {};
-    for (const validator of validators) {
-      sharesPerValidator[validator] = 0n;
+
+    // Start with current shares
+    for (const [validator, shares] of Object.entries(currentSharesPerValidator)) {
+      sharesPerValidator[validator] = shares;
     }
 
-    // Apply all prior events to get initial state at startEpoch
-    for (const ev of priorAddEvents) {
-      const validator = ev.body.escrow.toLowerCase();
-      const shares = BigInt(ev.body.new_shares || "0");
-      sharesPerValidator[validator] = (sharesPerValidator[validator] || 0n) + shares;
-    }
-
-    for (const ev of priorDebondEvents) {
-      const validator = ev.body.escrow.toLowerCase();
-      const shares = BigInt(ev.body.debonding_shares || "0");
+    // Subtract shares added during the year (to get back to startEpoch state)
+    for (const ev of relevantAddEvents) {
+      const validator = normalizeAddress(ev.body?.escrow);
+      const shares = BigInt(ev.body?.new_shares || "0");
       sharesPerValidator[validator] = (sharesPerValidator[validator] || 0n) - shares;
       if (sharesPerValidator[validator] < 0n) {
         sharesPerValidator[validator] = 0n;
       }
     }
 
+    // Add back shares removed during the year (they existed at startEpoch)
+    for (const ev of relevantDebondEvents) {
+      const validator = normalizeAddress(ev.body?.escrow);
+      const shares = BigInt(ev.body?.debonding_shares || "0");
+      sharesPerValidator[validator] = (sharesPerValidator[validator] || 0n) + shares;
+    }
+
+    // Step 6: Find validators with activity
+    const validatorsWithActivity = new Set();
+
+    for (const [validator, shares] of Object.entries(sharesPerValidator)) {
+      if (shares > 0n) {
+        validatorsWithActivity.add(validator);
+      }
+    }
+
+    for (const validator of Object.keys(currentSharesPerValidator)) {
+      validatorsWithActivity.add(validator);
+    }
+
+    for (const ev of [...relevantAddEvents, ...relevantDebondEvents]) {
+      validatorsWithActivity.add(normalizeAddress(ev.body?.escrow));
+    }
+
+    const validators = Array.from(validatorsWithActivity).filter(Boolean);
+
+    if (validators.length === 0) {
+      setProgress("No staking activity found for this address in selected year.");
+      return [];
+    }
+
+    setProgress(`Found ${validators.length} active validators. Fetching histories...`);
+
+    // Step 6: Fetch validator histories (only for active validators)
+    const validatorHistories = {};
+    for (let i = 0; i < validators.length; i++) {
+      const validator = validators[i];
+      setProgress(`Fetching history for validator ${i + 1}/${validators.length}...`);
+
+      const { items: history } = await paginatedFetch(
+        `${NEXUS_API}/consensus/validators/${validator}/history`,
+        { from: Math.max(1, startEpoch - 100), to: endEpoch },
+        "history"
+      );
+
+      // Sort by epoch ascending for easier lookup
+      history.sort((a, b) => a.epoch - b.epoch);
+      validatorHistories[validator] = history;
+    }
+
     // Step 7: Build epoch -> events map for the year
     const eventsByEpoch = {};
 
     for (const ev of relevantAddEvents) {
-      const epoch = ev.body.epoch || startEpoch;
+      const epoch = ev.body?.epoch || startEpoch;
       if (!eventsByEpoch[epoch]) eventsByEpoch[epoch] = [];
       eventsByEpoch[epoch].push({
         type: "add",
-        validator: ev.body.escrow.toLowerCase(),
-        shares: BigInt(ev.body.new_shares || "0"),
-        amount: BigInt(ev.body.amount || "0"),
+        validator: normalizeAddress(ev.body?.escrow),
+        shares: BigInt(ev.body?.new_shares || "0"),
+        amount: BigInt(ev.body?.amount || "0"),
       });
     }
 
     for (const ev of relevantDebondEvents) {
-      const epoch = ev.body.epoch || startEpoch;
+      const epoch = ev.body?.epoch || startEpoch;
       if (!eventsByEpoch[epoch]) eventsByEpoch[epoch] = [];
       eventsByEpoch[epoch].push({
         type: "debond",
-        validator: ev.body.escrow.toLowerCase(),
-        shares: BigInt(ev.body.debonding_shares || "0"),
-        amount: BigInt(ev.body.amount || "0"),
+        validator: normalizeAddress(ev.body?.escrow),
+        shares: BigInt(ev.body?.debonding_shares || "0"),
+        amount: BigInt(ev.body?.amount || "0"),
       });
     }
 
     // Step 8: Determine which epochs to sample based on granularity
     setProgress("Building time slices...");
-    let epochsToProcess = [];
+    const epochsToProcess = [];
     const totalEpochs = endEpoch - startEpoch + 1;
 
-    if (granularity === "epoch") {
-      for (let e = startEpoch; e <= endEpoch; e++) {
-        epochsToProcess.push(e);
-      }
+    if (granularity === "year") {
+      // Just end epoch for yearly summary (prevTotalValue initialized from startEpoch)
+      epochsToProcess.push(endEpoch);
     } else {
-      let targetSamples;
-      if (granularity === "day") targetSamples = 365;
-      else if (granularity === "week") targetSamples = 52;
-      else targetSamples = 12; // month
-
+      // Monthly: ~12 samples (skip startEpoch, it's used for baseline)
+      const targetSamples = 12;
       const step = Math.max(1, Math.floor(totalEpochs / targetSamples));
-      for (let e = startEpoch; e <= endEpoch; e += step) {
+      for (let e = startEpoch + step; e <= endEpoch; e += step) {
         epochsToProcess.push(e);
       }
-      if (epochsToProcess[epochsToProcess.length - 1] !== endEpoch) {
+      if (
+        epochsToProcess.length === 0 ||
+        epochsToProcess[epochsToProcess.length - 1] !== endEpoch
+      ) {
         epochsToProcess.push(endEpoch);
       }
     }
 
-    // Step 9: Fetch timestamps for sampled epochs
+    // Step 9: Fetch timestamps for sampled epochs (and startEpoch)
     setProgress("Fetching epoch timestamps...");
     const epochTimestamps = {};
+
+    // Fetch startEpoch timestamp first
+    try {
+      const startEpochInfo = await fetchEpochInfo(NEXUS_API, startEpoch);
+      const startTimestamp = await fetchBlockTimestamp(NEXUS_API, startEpochInfo?.start_height);
+      epochTimestamps[startEpoch] = startTimestamp;
+    } catch {
+      // Continue without start timestamp
+    }
 
     for (let i = 0; i < epochsToProcess.length; i++) {
       const epoch = epochsToProcess[i];
@@ -440,31 +336,38 @@ export const fetchStakingRewards = async (
       }
       try {
         const epochInfo = await fetchEpochInfo(NEXUS_API, epoch);
-        const timestamp = await fetchBlockTimestamp(NEXUS_API, epochInfo.start_height);
+        const timestamp = await fetchBlockTimestamp(NEXUS_API, epochInfo?.start_height);
         epochTimestamps[epoch] = timestamp;
       } catch {
         // Skip epochs that don't exist
       }
-      await sleep(50);
     }
 
     // Step 10: Build results with proper earned calculation
     setProgress("Calculating rewards...");
     const results = [];
 
-    // Track state for each validator
+    // Initialize validator state with initial shares and compute starting value
+    // Fetch history at startEpoch specifically (using narrow from/to range)
     const validatorState = {};
-    for (const validator of validators) {
+    for (let i = 0; i < validators.length; i++) {
+      const validator = validators[i];
+      setProgress(`Computing initial value for validator ${i + 1}/${validators.length}...`);
+
+      // Fetch history at startEpoch using targeted request
+      const initialHistoryEntry = await fetchHistoryAtEpoch(NEXUS_API, validator, startEpoch);
+      const initialShares = sharesPerValidator[validator] || 0n;
+      const initialValue = calculateTotalValue(initialShares, initialHistoryEntry);
+
       validatorState[validator] = {
-        shares: sharesPerValidator[validator],
-        prevTotalValue: 0n,
-        // Track delegation/undelegation value adjustments within each period
+        shares: initialShares,
+        prevTotalValue: initialValue, // Start with actual value, not 0
         periodDelegationValue: 0n,
         periodUndelegationValue: 0n,
       };
     }
 
-    let lastProcessedEpoch = startEpoch - 1;
+    let lastProcessedEpoch = startEpoch; // Start from startEpoch since we initialized with its value
 
     for (let i = 0; i < epochsToProcess.length; i++) {
       const epoch = epochsToProcess[i];
@@ -479,21 +382,17 @@ export const fetchStakingRewards = async (
           const state = validatorState[ev.validator];
           if (!state) continue;
 
-          // Get share value at event time
           const history = validatorHistories[ev.validator] || [];
           const historyEntry = findHistoryEntryForEpoch(history, e);
-          const shareValueAtEvent = historyEntry ? calculateShareValue(historyEntry) : 0n;
 
           if (ev.type === "add") {
             state.shares += ev.shares;
-            // Track the value added (principal, not reward)
-            const delegationValue = (ev.shares * shareValueAtEvent) / BigInt(1e18);
+            const delegationValue = calculateTotalValue(ev.shares, historyEntry);
             state.periodDelegationValue += delegationValue;
           } else if (ev.type === "debond") {
             state.shares -= ev.shares;
             if (state.shares < 0n) state.shares = 0n;
-            // Track the value removed
-            const undelegationValue = (ev.shares * shareValueAtEvent) / BigInt(1e18);
+            const undelegationValue = calculateTotalValue(ev.shares, historyEntry);
             state.periodUndelegationValue += undelegationValue;
           }
         }
@@ -512,36 +411,39 @@ export const fetchStakingRewards = async (
         if (!historyEntry) continue;
 
         const shareValueScaled = calculateShareValue(historyEntry);
-        const totalValue = (state.shares * shareValueScaled) / BigInt(1e18);
+        const totalValue = calculateTotalValue(state.shares, historyEntry);
 
-        // Calculate earned using the proper formula:
-        // earned = total_value_now - total_value_prev
-        //        - delegations_principal + undelegations_principal
-        // This isolates actual rewards from principal changes
-        const earned = totalValue - state.prevTotalValue
-          - state.periodDelegationValue
-          + state.periodUndelegationValue;
+        const earned =
+          totalValue -
+          state.prevTotalValue -
+          state.periodDelegationValue +
+          state.periodUndelegationValue;
 
         results.push({
-          timestamp: timestamp,
-          epoch: epoch,
-          shares_address: validator,
-          num_shares: state.shares.toString(),
-          share_value: shareValueScaled.toString(),
-          total_value: totalValue.toString(),
-          earned: earned.toString(),
+          start_timestamp: epochTimestamps[startEpoch] || "",
+          end_timestamp: timestamp,
+          start_epoch: startEpoch,
+          end_epoch: epoch,
+          validator,
+          shares: state.shares.toString(),
+          share_price: toRose(shareValueScaled, 18),
+          delegation_value: toRose(totalValue),
+          rewards: toRose(earned),
         });
 
-        // Update state for next period
         state.prevTotalValue = totalValue;
         state.periodDelegationValue = 0n;
         state.periodUndelegationValue = 0n;
       }
     }
 
+    // Log warnings if any
+    if (warnings.length > 0) {
+      console.warn("Staking rewards fetch warnings:", warnings);
+    }
+
     setProgress(`Generated ${results.length} rows. Ready for download!`);
     return results;
-
   } catch (error) {
     console.error("Error fetching staking rewards:", error);
     throw error;

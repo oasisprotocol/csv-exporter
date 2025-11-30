@@ -5,10 +5,10 @@ import { fetchStakingRewards } from "../fetchStakingRewards";
 import { NEXUS_API } from "../constants";
 
 const StakingRewards = () => {
-  const [year, setYear] = useState("2024");
+  const [year, setYear] = useState("2025");
   const [addressError, setAddressError] = useState("");
   const [address, setAddress] = useState("");
-  const [granularity, setGranularity] = useState("month");
+  const [granularity, setGranularity] = useState("year");
   const [progress, setProgress] = useState("");
   const [rows, setRows] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -40,13 +40,7 @@ const StakingRewards = () => {
         return;
       }
 
-      const rewards = await fetchStakingRewards(
-        NEXUS_API,
-        address,
-        year,
-        granularity,
-        setProgress
-      );
+      const rewards = await fetchStakingRewards(NEXUS_API, address, year, granularity, setProgress);
 
       setRows(rewards);
       if (rewards.length === 0) {
@@ -64,13 +58,15 @@ const StakingRewards = () => {
 
   const downloadCSV = () => {
     const keys = [
-      "timestamp",
-      "epoch",
-      "shares_address",
-      "num_shares",
-      "share_value",
-      "total_value",
-      "earned",
+      "start_timestamp",
+      "end_timestamp",
+      "start_epoch",
+      "end_epoch",
+      "validator",
+      "shares",
+      "share_price",
+      "delegation_value",
+      "rewards",
     ];
     const csvData = Papa.unparse({ data: rows, fields: keys });
     const blob = new Blob([csvData], { type: "text/csv;charset=utf-8;" });
@@ -99,7 +95,20 @@ const StakingRewards = () => {
           textAlign: "center",
         }}
       >
-        Staking Rewards
+        Staking Rewards{" "}
+        <span
+          style={{
+            fontSize: "12px",
+            fontWeight: "500",
+            backgroundColor: "#fef3c7",
+            color: "#92400e",
+            padding: "2px 8px",
+            borderRadius: "4px",
+            verticalAlign: "middle",
+          }}
+        >
+          Beta
+        </span>
       </h1>
       <p
         style={{
@@ -110,8 +119,7 @@ const StakingRewards = () => {
           marginBottom: "25px",
         }}
       >
-        Export staking rewards data for tax reporting. Tracks delegation value
-        changes over time.
+        Export staking rewards data. Tracks delegation value changes over time.
       </p>
 
       <label style={{ display: "block", marginBottom: "15px" }}>
@@ -136,9 +144,7 @@ const StakingRewards = () => {
             boxSizing: "border-box",
           }}
         />
-        {addressError && (
-          <span style={{ color: "red", fontSize: "12px" }}>{addressError}</span>
-        )}
+        {addressError && <span style={{ color: "red", fontSize: "12px" }}>{addressError}</span>}
       </label>
 
       <div style={{ display: "flex", gap: "15px", marginBottom: "15px" }}>
@@ -162,8 +168,6 @@ const StakingRewards = () => {
           >
             <option value="2025">2025</option>
             <option value="2024">2024</option>
-            <option value="2023">2023</option>
-            <option value="2022">2022</option>
           </select>
         </label>
 
@@ -185,10 +189,8 @@ const StakingRewards = () => {
               boxSizing: "border-box",
             }}
           >
+            <option value="year">Yearly (~1 row/validator)</option>
             <option value="month">Monthly (~12 rows/validator)</option>
-            <option value="week">Weekly (~52 rows/validator)</option>
-            <option value="day">Daily (~365 rows/validator)</option>
-            <option value="epoch">Per Epoch (~8760 rows/validator)</option>
           </select>
         </label>
       </div>
@@ -201,10 +203,34 @@ const StakingRewards = () => {
           marginBottom: "15px",
           fontSize: "12px",
           color: "#6b7280",
+          lineHeight: "1.6",
         }}
       >
-        <strong>CSV Columns:</strong> timestamp, epoch, shares_address, num_shares,
-        share_value, total_value, earned
+        <strong>CSV Fields:</strong>
+        <ul style={{ margin: "8px 0 0 0", paddingLeft: "18px" }}>
+          <li>
+            <strong>start_timestamp, end_timestamp</strong> - Period start/end dates
+          </li>
+          <li>
+            <strong>start_epoch, end_epoch</strong> - Period start/end epochs
+          </li>
+          <li>
+            <strong>validator</strong> - Validator address you delegated to
+          </li>
+          <li>
+            <strong>shares</strong> - Your share balance with this validator
+          </li>
+          <li>
+            <strong>share_price</strong> - ROSE value per share at end epoch
+          </li>
+          <li>
+            <strong>delegation_value</strong> - Total value of your delegation (shares ×
+            share_price)
+          </li>
+          <li>
+            <strong>rewards</strong> - Staking rewards earned in this period
+          </li>
+        </ul>
       </div>
 
       <button
@@ -226,9 +252,7 @@ const StakingRewards = () => {
         {isLoading ? "Fetching..." : "Fetch Staking Rewards"}
       </button>
 
-      <p style={{ color: "#6b7280", fontSize: "14px", textAlign: "center" }}>
-        {progress}
-      </p>
+      <p style={{ color: "#6b7280", fontSize: "14px", textAlign: "center" }}>{progress}</p>
 
       <p
         style={{
@@ -239,8 +263,8 @@ const StakingRewards = () => {
           marginBottom: "20px",
         }}
       >
-        This tool calculates rewards based on share value changes. Data is for
-        informational purposes only and may not reflect official records.
+        Experimental: This tool calculates rewards based on share value changes. Data is provided
+        as-is without warranty. Please verify all data independently before use.
       </p>
 
       {rows.length > 0 && (
