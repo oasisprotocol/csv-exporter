@@ -2,6 +2,8 @@
 
 Oasis Network staking rewards and accounting events exporter.
 
+Live: https://csv.ptrus.me/staking-rewards
+
 ## Features
 
 - Export staking rewards as CSV (yearly or monthly granularity)
