@@ -87,6 +87,9 @@ const Layout = () => {
             View on GitHub
           </a>
         </p>
+        <p style={{ marginTop: "8px" }}>
+          Built: {process.env.REACT_APP_BUILD_DATE || new Date().toISOString()}
+        </p>
       </div>
     </div>
   );
