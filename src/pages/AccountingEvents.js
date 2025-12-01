@@ -174,7 +174,7 @@ const AccountingEvents = () => {
           <option value="consensus">Consensus</option>
         </select>
       </label>
-      <label>
+      <label style={{ display: "block", marginBottom: "15px" }}>
         <span style={{ color: "#4b5563", fontSize: "14px" }}>Select Year:</span>
         <select
           value={year}
@@ -193,8 +193,50 @@ const AccountingEvents = () => {
           <option value="2024">2024</option>
         </select>
       </label>
-      <br />
-      <br />
+
+      <div
+        style={{
+          backgroundColor: "#f3f4f6",
+          borderRadius: "5px",
+          padding: "12px",
+          marginBottom: "15px",
+          fontSize: "12px",
+          color: "#6b7280",
+          lineHeight: "1.6",
+        }}
+      >
+        <strong>CSV Fields:</strong>
+        <ul style={{ margin: "8px 0 0 0", paddingLeft: "18px" }}>
+          <li>
+            <strong>timestamp</strong> - Event date/time
+          </li>
+          <li>
+            <strong>block_height</strong> - Block number
+          </li>
+          <li>
+            <strong>tx_hash</strong> - Transaction hash
+          </li>
+          <li>
+            <strong>type</strong> - Event type (staking.transfer, accounts.transfer, etc.)
+          </li>
+          <li>
+            <strong>comment</strong> - Transfer direction (incoming/outgoing)
+          </li>
+          <li>
+            <strong>from, to</strong> - Sender and recipient addresses
+          </li>
+          <li>
+            <strong>to_eth</strong> - Recipient in Ethereum format (Sapphire only)
+          </li>
+          <li>
+            <strong>amount, symbol, decimals</strong> - Token amount in base units
+          </li>
+          <li>
+            <strong>contract</strong> - Token contract address (ERC20 only)
+          </li>
+        </ul>
+      </div>
+
       <button
         onClick={handleFetch}
         disabled={addressError !== "" || address === "" || isLoading}

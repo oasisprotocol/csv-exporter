@@ -119,7 +119,7 @@ const StakingRewards = () => {
           marginBottom: "25px",
         }}
       >
-        Export staking rewards data. Tracks delegation value changes over time.
+        Calculate rewards earned from staking over a selected period.
       </p>
 
       <label style={{ display: "block", marginBottom: "15px" }}>
