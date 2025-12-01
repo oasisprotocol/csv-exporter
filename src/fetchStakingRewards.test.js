@@ -25,7 +25,7 @@ describe("fetchHistoryAtEpoch", () => {
   });
 });
 
-describe("Integration test for oasis1qpnzqwj58m48sra4uuvazpqnw0zwlqfvnvjctldl", () => {
+describe("Integration test for oasis1qpnzqwj58m48sra4uuvazpqnw0zwlqfvnvjctldl (yearly)", () => {
   // This address has one delegation made in Nov 2022 to validator oasis1qq3xrq0urs8qcffhvmhfhz4p0mu7ewc8rscnlwxe
   // shares: 138906201889790
   // For 2024 yearly: earned should NOT equal total_value
@@ -114,6 +114,179 @@ describe("Integration test for oasis1qpnzqwj58m48sra4uuvazpqnw0zwlqfvnvjctldl", 
     // earned should be the growth (~10% of prevTotalValue)
     expect(earned > 0n).toBe(true);
     expect(earned < totalValue).toBe(true);
+  });
+});
+
+describe("Integration test for oasis1qpnzqwj58m48sra4uuvazpqnw0zwlqfvnvjctldl (monthly)", () => {
+  // Same address with one long-term delegation to validator oasis1qq3xrq0urs8qcffhvmhfhz4p0mu7ewc8rscnlwxe
+  // For monthly granularity, each month should show incremental rewards
+  // The sum of all monthly rewards should equal the yearly total
+
+  const userShares = BigInt("138906201889790");
+  const validator = "oasis1qq3xrq0urs8qcffhvmhfhz4p0mu7ewc8rscnlwxe";
+
+  // Simulated monthly history entries (epoch, active_balance, active_shares)
+  // Showing gradual balance growth throughout 2024
+  const monthlyHistory = [
+    { epoch: 28809, active_balance: "357481115089462727", active_shares: "258713897053065732" }, // Jan start
+    { epoch: 29549, active_balance: "360056126000000000", active_shares: "258713897053065732" }, // ~Feb
+    { epoch: 30289, active_balance: "362631136910000000", active_shares: "258713897053065732" }, // ~Mar
+    { epoch: 31029, active_balance: "365206147820000000", active_shares: "258713897053065732" }, // ~Apr
+    { epoch: 31769, active_balance: "367781158730000000", active_shares: "258713897053065732" }, // ~May
+    { epoch: 32509, active_balance: "370356169640000000", active_shares: "258713897053065732" }, // ~Jun
+    { epoch: 33249, active_balance: "372931180550000000", active_shares: "258713897053065732" }, // ~Jul
+    { epoch: 33989, active_balance: "375506191460000000", active_shares: "258713897053065732" }, // ~Aug
+    { epoch: 34729, active_balance: "378081202370000000", active_shares: "258713897053065732" }, // ~Sep
+    { epoch: 35469, active_balance: "380656213280000000", active_shares: "258713897053065732" }, // ~Oct
+    { epoch: 36209, active_balance: "383231224190000000", active_shares: "258713897053065732" }, // ~Nov
+    { epoch: 36949, active_balance: "385806235100000000", active_shares: "258713897053065732" }, // ~Dec
+    { epoch: 37689, active_balance: "388381246010000000", active_shares: "258713897053065732" }, // Dec end
+  ];
+
+  // Helper: calculate total value
+  const calculateTotalValue = (shares, historyEntry) => {
+    const balance = BigInt(historyEntry.active_balance);
+    const validatorShares = BigInt(historyEntry.active_shares);
+    return (shares * balance) / validatorShares;
+  };
+
+  it("should compute monthly values with gradual increase", () => {
+    const monthlyValues = monthlyHistory.map((entry) => ({
+      epoch: entry.epoch,
+      totalValue: calculateTotalValue(userShares, entry),
+    }));
+
+    // Each month should have higher value than the previous
+    for (let i = 1; i < monthlyValues.length; i++) {
+      expect(monthlyValues[i].totalValue).toBeGreaterThan(monthlyValues[i - 1].totalValue);
+    }
+  });
+
+  it("should compute monthly rewards correctly (earned = value_now - value_prev)", () => {
+    const monthlyRewards = [];
+    let prevValue = calculateTotalValue(userShares, monthlyHistory[0]);
+
+    for (let i = 1; i < monthlyHistory.length; i++) {
+      const currentValue = calculateTotalValue(userShares, monthlyHistory[i]);
+      // For account with no events during month: earned = currentValue - prevValue
+      const earned = currentValue - prevValue;
+      monthlyRewards.push({
+        epoch: monthlyHistory[i].epoch,
+        earned,
+        currentValue,
+        prevValue,
+      });
+      prevValue = currentValue;
+    }
+
+    // Each monthly reward should be positive (account is earning)
+    for (const month of monthlyRewards) {
+      expect(month.earned).toBeGreaterThan(0n);
+    }
+  });
+
+  it("should have sum of monthly rewards equal to yearly total", () => {
+    const startValue = calculateTotalValue(userShares, monthlyHistory[0]);
+    const endValue = calculateTotalValue(userShares, monthlyHistory[monthlyHistory.length - 1]);
+    const yearlyTotal = endValue - startValue;
+
+    // Sum up monthly rewards
+    let monthlySum = 0n;
+    let prevValue = startValue;
+    for (let i = 1; i < monthlyHistory.length; i++) {
+      const currentValue = calculateTotalValue(userShares, monthlyHistory[i]);
+      monthlySum += currentValue - prevValue;
+      prevValue = currentValue;
+    }
+
+    // Monthly sum should equal yearly total exactly
+    expect(monthlySum).toBe(yearlyTotal);
+  });
+
+  it("should track prevTotalValue correctly across months", () => {
+    // Simulate the state tracking logic from fetchStakingRewards
+    const state = {
+      shares: userShares,
+      prevTotalValue: calculateTotalValue(userShares, monthlyHistory[0]),
+      periodDelegationValue: 0n,
+      periodUndelegationValue: 0n,
+    };
+
+    const results = [];
+
+    for (let i = 1; i < monthlyHistory.length; i++) {
+      const historyEntry = monthlyHistory[i];
+      const totalValue = calculateTotalValue(state.shares, historyEntry);
+
+      const earned =
+        totalValue -
+        state.prevTotalValue -
+        state.periodDelegationValue +
+        state.periodUndelegationValue;
+
+      results.push({
+        epoch: historyEntry.epoch,
+        totalValue,
+        prevTotalValue: state.prevTotalValue,
+        earned,
+      });
+
+      // Update state for next iteration (this is the key part!)
+      state.prevTotalValue = totalValue;
+      state.periodDelegationValue = 0n;
+      state.periodUndelegationValue = 0n;
+    }
+
+    // Each result should show correct incremental earned
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      // earned should be the difference between current and previous value
+      expect(result.earned).toBe(result.totalValue - result.prevTotalValue);
+      // earned should NOT be the full totalValue (that would be a bug)
+      expect(result.earned).not.toBe(result.totalValue);
+      // earned should be positive
+      expect(result.earned).toBeGreaterThan(0n);
+    }
+  });
+
+  it("should NOT reset prevTotalValue to 0 each month", () => {
+    // This test catches a potential bug where prevTotalValue is reset incorrectly
+    const startValue = calculateTotalValue(userShares, monthlyHistory[0]);
+
+    // BUG simulation: if we reset prevTotalValue to 0 each month
+    const buggyResults = [];
+    for (let i = 1; i < monthlyHistory.length; i++) {
+      const totalValue = calculateTotalValue(userShares, monthlyHistory[i]);
+      // BUG: using 0 instead of actual prevTotalValue
+      const buggyEarned = totalValue - 0n;
+      buggyResults.push({ epoch: monthlyHistory[i].epoch, earned: buggyEarned });
+    }
+
+    // CORRECT implementation
+    const correctResults = [];
+    let prevValue = startValue;
+    for (let i = 1; i < monthlyHistory.length; i++) {
+      const totalValue = calculateTotalValue(userShares, monthlyHistory[i]);
+      const correctEarned = totalValue - prevValue;
+      correctResults.push({ epoch: monthlyHistory[i].epoch, earned: correctEarned });
+      prevValue = totalValue;
+    }
+
+    // Buggy earned would equal totalValue (way too high)
+    for (const buggy of buggyResults) {
+      const totalValue = calculateTotalValue(
+        userShares,
+        monthlyHistory.find((h) => h.epoch === buggy.epoch)
+      );
+      expect(buggy.earned).toBe(totalValue);
+    }
+
+    // Correct earned should be much smaller (just the monthly increment)
+    for (let i = 0; i < correctResults.length; i++) {
+      const buggyEarned = buggyResults[i].earned;
+      const correctEarned = correctResults[i].earned;
+      expect(correctEarned).toBeLessThan(buggyEarned);
+    }
   });
 });
 

@@ -35,8 +35,11 @@ export const paginatedFetch = async (url, params, itemsKey, limit = 1000) => {
       wasClipped = true;
     }
 
-    // Break if we got fewer than the limit (last page) or offset exceeds total
-    if (pageItems.length < limit || offset + pageItems.length >= (response.data.total_count || 0)) {
+    // Break if we got fewer than the limit (last page)
+    // Note: When is_total_count_clipped is true, total_count is capped (often at 1000),
+    // so we can't rely on offset >= total_count to know we're done.
+    // Instead, we only stop when we get fewer items than requested.
+    if (pageItems.length < limit) {
       break;
     }
 
