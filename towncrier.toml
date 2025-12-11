@@ -10,7 +10,7 @@ check_ignore_files = [
   # File where we store app version.
   "package.json",
 ]
-issue_format = "[#{issue}](https://github.com/oasisprotocol/oasis-csv-exporter/issues/{issue})"
+issue_format = "[#{issue}](https://github.com/oasisprotocol/csv-exporter/issues/{issue})"
 start_string = "<!-- TOWNCRIER -->\n"
 # Custom Jinja2 template for preparing a new section of the Change Log.
 template = ".changelog/template.md.j2"

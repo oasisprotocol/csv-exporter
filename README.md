@@ -1,4 +1,4 @@
-# oasis-csv-exporter
+# Csv Exporter
 
 Web tool to export Oasis Network accounting events and
 staking rewards to CSV format.
