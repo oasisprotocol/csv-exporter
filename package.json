@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,10 +11,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:live": "tsx scripts/test-staking-rewards.js",
-    "lint": "eslint src/",
+    "lint": "eslint src/ --max-warnings 0",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
-    "format:check": "prettier --check src/",
+    "prettier-check": "prettier --check src/",
+    "lint-git": "node ./internals/scripts/gitlint.cjs",
+    "lint-docs": "markdownlint --ignore '**/node_modules/**' '**/*.md'",
     "lint-changelog": "markdownlint --config .changelog/.markdownlint.yml .changelog/"
   },
   "dependencies": {
@@ -44,6 +46,7 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-config-react-app": "^7.0.1",
     "eslint-plugin-prettier": "^5.5.4",
     "jsdom": "^27.0.1",
     "markdownlint-cli": "^0.47.0",

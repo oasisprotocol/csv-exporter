@@ -1,8 +1,9 @@
 # oasis-csv-exporter
 
-Web tool to export Oasis Network accounting events and staking rewards to CSV format.
+Web tool to export Oasis Network accounting events and
+staking rewards to CSV format.
 
-Live: https://reports.oasis.io
+Live: [Preview]
 
 ## Features
 
@@ -28,3 +29,5 @@ npm run build
 ```bash
 npm test
 ```
+
+[Preview]: https://reports.oasis.io

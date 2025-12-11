@@ -123,7 +123,7 @@ describe("Integration test for oasis1qpnzqwj58m48sra4uuvazpqnw0zwlqfvnvjctldl (m
   // The sum of all monthly rewards should equal the yearly total
 
   const userShares = BigInt("138906201889790");
-  const validator = "oasis1qq3xrq0urs8qcffhvmhfhz4p0mu7ewc8rscnlwxe";
+  // const validator = "oasis1qq3xrq0urs8qcffhvmhfhz4p0mu7ewc8rscnlwxe";
 
   // Simulated monthly history entries (epoch, active_balance, active_shares)
   // Showing gradual balance growth throughout 2024

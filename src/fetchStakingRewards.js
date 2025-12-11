@@ -345,10 +345,7 @@ export const fetchStakingRewards = async (NEXUS_API, address, year, granularity,
       }
 
       // For 2025 or incomplete years, ensure we include the current endEpoch if not already
-      if (
-        epochsToProcess.length === 0 ||
-        epochsToProcess[epochsToProcess.length - 1] < endEpoch
-      ) {
+      if (epochsToProcess.length === 0 || epochsToProcess[epochsToProcess.length - 1] < endEpoch) {
         epochsToProcess.push(endEpoch);
       }
     }
