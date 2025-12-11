@@ -76,7 +76,7 @@ const Layout = () => {
         <p>
           Repository:{" "}
           <a
-            href="https://github.com/ptrus/mariko"
+            href="https://github.com/oasisprotocol/oasis-csv-exporter"
             target="_blank"
             rel="noopener noreferrer"
             style={{

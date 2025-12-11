@@ -1,8 +1,8 @@
-# Mariko
+# oasis-csv-exporter
 
-Oasis Network staking rewards and accounting events exporter.
+Web tool to export Oasis Network accounting events and staking rewards to CSV format.
 
-Live: https://csv.ptrus.me/staking-rewards
+Live: https://reports.oasis.io
 
 ## Features
 
