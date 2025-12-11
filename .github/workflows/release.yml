@@ -49,7 +49,7 @@ jobs:
           # Need to escape again
           VERSION: ${{ steps.vars.outputs.VERSION }}
         run: |
-          cd dist/
+          cd build/
           zip -r "../csv-exporter-$VERSION.zip" .
       - name: Parse CHANGELOG.md file and extract changes for the given version
         uses: buberdds/extract-changelog-action@v1
