@@ -12,6 +12,13 @@ The format is inspired by [Keep a Changelog].
 
 <!-- TOWNCRIER -->
 
+## 0.1.1 (2025-12-11)
+
+### Internal Changes
+
+- Align GitHub workflows with vite outDir value
+  ([#3](https://github.com/oasisprotocol/csv-exporter/issues/3))
+
 ## 0.1.0 (2025-12-11)
 
 ### Process Changes
