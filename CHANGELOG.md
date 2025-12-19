@@ -12,6 +12,13 @@ The format is inspired by [Keep a Changelog].
 
 <!-- TOWNCRIER -->
 
+## 0.2.1 (2025-12-19)
+
+### Bug Fixes and Improvements
+
+- Fix package lock files
+  ([#8](https://github.com/oasisprotocol/csv-exporter/issues/8))
+
 ## 0.2.0 (2025-12-19)
 
 ### Features
