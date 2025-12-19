@@ -22,6 +22,8 @@ jobs:
           node-version: '24'
 
       - name: Update ROSE prices
+        env:
+          CRYPTOCOMPARE_API_KEY: ${{ secrets.CRYPTOCOMPARE_API_KEY }}
         run: node scripts/update-prices.js
 
       - name: Commit and push changes

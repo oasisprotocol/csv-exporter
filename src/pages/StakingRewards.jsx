@@ -233,8 +233,8 @@ const StakingRewards = () => {
             <strong>rewards</strong> - Staking rewards earned in this period
           </li>
           <li>
-            <strong>usd_price, usd_reward</strong> - USD price at period end and reward value
-            (prices sourced from Binance)
+            <strong>usd_price, usd_reward</strong> - USD price at period end and reward value (daily
+            close prices from CryptoCompare)
           </li>
         </ul>
       </div>
@@ -269,8 +269,9 @@ const StakingRewards = () => {
           marginBottom: "20px",
         }}
       >
-        Experimental: This tool calculates rewards based on share value changes. Data is provided
-        as-is without warranty. Please verify all data independently before use.
+        Experimental: Rewards are calculated from share value changes. USD values use end-of-period
+        prices, but rewards only become realized when you undelegate. Consider using the USD price
+        at undelegation time via the Accounting Events tool. Verify all data independently.
       </p>
 
       {rows.length > 0 && (

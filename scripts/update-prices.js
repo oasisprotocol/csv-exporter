@@ -1,5 +1,5 @@
 /**
- * Fetches latest ROSE/USD prices from Binance and updates the price file.
+ * Fetches latest ROSE/USD prices from CryptoCompare and updates the price file.
  * Only adds new dates that don't already exist.
  *
  * Usage:
@@ -7,6 +7,12 @@
  *
  * Options:
  *   --dry-run  Print what would be added without modifying the file
+ *
+ * Environment Variables:
+ *   CRYPTOCOMPARE_API_KEY - CryptoCompare API key (required)
+ *
+ * Price Source:
+ *   CryptoCompare (daily close prices, aggregated from multiple exchanges)
  */
 
 import fs from "fs";
@@ -15,8 +21,11 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PRICE_FILE = path.join(__dirname, "..", "src", "prices", "rose-usd.json");
-const BINANCE_API = "https://api.binance.com/api/v3/klines";
-const SYMBOL = "ROSEUSDT";
+
+// CryptoCompare API configuration
+const CRYPTOCOMPARE_API = "https://min-api.cryptocompare.com/data/v2/histoday";
+const SYMBOL = "ROSE";
+const CURRENCY = "USD";
 const DAYS_TO_FETCH = 30;
 
 /**
@@ -26,35 +35,48 @@ const DAYS_TO_FETCH = 30;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Fetch daily prices from Binance API with retry logic.
+ * Fetch daily prices from CryptoCompare API.
  * @param {number} limit - Number of days to fetch
  * @param {number} retries - Number of retries on failure
  * @param {number} retryDelay - Delay between retries in ms
  * @returns {Promise<Array<{date: string, price: number}>>}
  */
-export async function fetchPricesFromBinance(limit = DAYS_TO_FETCH, retries = 3, retryDelay = 5000) {
-  const url = `${BINANCE_API}?symbol=${SYMBOL}&interval=1d&limit=${limit}`;
+export async function fetchPricesFromCryptoCompare(limit = DAYS_TO_FETCH, retries = 3, retryDelay = 5000) {
+  const apiKey = process.env.CRYPTOCOMPARE_API_KEY;
+  if (!apiKey) {
+    throw new Error("CRYPTOCOMPARE_API_KEY environment variable not set");
+  }
+
+  const url = `${CRYPTOCOMPARE_API}?fsym=${SYMBOL}&tsym=${CURRENCY}&limit=${limit}`;
 
   let lastError;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      console.log(`Fetching prices from Binance (attempt ${attempt}/${retries})...`);
-      const response = await fetch(url);
+      console.log(`Fetching prices from CryptoCompare (attempt ${attempt}/${retries})...`);
+      const response = await fetch(url, {
+        headers: {
+          authorization: `Apikey ${apiKey}`,
+        },
+      });
 
       if (!response.ok) {
-        throw new Error(`Binance API error: ${response.status} ${response.statusText}`);
+        throw new Error(`CryptoCompare API error: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
 
-      if (!Array.isArray(data) || data.length === 0) {
-        throw new Error("No data returned from Binance API");
+      if (data.Response === "Error") {
+        throw new Error(`CryptoCompare API error: ${data.Message}`);
       }
 
-      return data.map((kline) => {
-        const [openTime, , , , close] = kline;
-        const date = new Date(openTime).toISOString().split("T")[0];
-        return { date, price: parseFloat(close) };
+      const prices = data.Data?.Data;
+      if (!Array.isArray(prices) || prices.length === 0) {
+        throw new Error("No data returned from CryptoCompare API");
+      }
+
+      return prices.map((day) => {
+        const date = new Date(day.time * 1000).toISOString().split("T")[0];
+        return { date, price: day.close };
       });
     } catch (err) {
       lastError = err;
@@ -136,9 +158,9 @@ export function savePrices(prices, filePath = PRICE_FILE) {
 export async function updatePrices(options = {}) {
   const { dryRun = false, filePath = PRICE_FILE } = options;
 
-  // Fetch new prices from Binance
-  const newPrices = await fetchPricesFromBinance();
-  console.log(`Fetched ${newPrices.length} prices from Binance`);
+  // Fetch new prices from CryptoCompare
+  const newPrices = await fetchPricesFromCryptoCompare();
+  console.log(`Fetched ${newPrices.length} prices from CryptoCompare`);
 
   // Load existing prices
   const existing = loadPrices(filePath);

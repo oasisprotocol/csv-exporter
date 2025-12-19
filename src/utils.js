@@ -168,12 +168,24 @@ export const fetchRosePrices = async (onWarning) => {
 
 /**
  * Get the USD price for ROSE on a given date.
+ * Falls back to previous days if the exact date is not available.
  * @param {object} prices - Price data object from fetchRosePrices()
  * @param {string} timestamp - ISO timestamp
+ * @param {number} maxDaysBack - Maximum days to look back (default 7)
  * @returns {number|null} - USD price or null if not available
  */
-export const getRosePrice = (prices, timestamp) => {
+export const getRosePrice = (prices, timestamp, maxDaysBack = 7) => {
   if (!timestamp || !prices) return null;
-  const date = timestamp.split("T")[0]; // Extract YYYY-MM-DD
-  return prices[date] ?? null;
+  const date = new Date(timestamp.split("T")[0]);
+
+  for (let i = 0; i <= maxDaysBack; i++) {
+    const checkDate = new Date(date);
+    checkDate.setDate(checkDate.getDate() - i);
+    const dateStr = checkDate.toISOString().split("T")[0];
+    if (prices[dateStr] !== undefined) {
+      return prices[dateStr];
+    }
+  }
+
+  return null;
 };

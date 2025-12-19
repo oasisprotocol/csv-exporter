@@ -238,7 +238,7 @@ const AccountingEvents = () => {
           </li>
           <li>
             <strong>usd_price, usd_amount</strong> - USD price and value at time of transaction
-            (ROSE and wROSE only, prices sourced from Binance)
+            (ROSE and wROSE only, daily close prices from CryptoCompare)
           </li>
         </ul>
       </div>
