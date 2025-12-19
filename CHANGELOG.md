@@ -12,6 +12,13 @@ The format is inspired by [Keep a Changelog].
 
 <!-- TOWNCRIER -->
 
+## 0.2.0 (2025-12-19)
+
+### Features
+
+- Add USD ROSE prices at the day of the transactions
+  ([#6](https://github.com/oasisprotocol/csv-exporter/issues/6))
+
 ## 0.1.1 (2025-12-11)
 
 ### Internal Changes
