@@ -80,10 +80,12 @@ const fetchBlockTimestamp = async (NEXUS_API, height) => {
 // Hardcoded epoch ranges for supported years.
 // These values are fixed for completed years and won't change.
 // 2024: epoch 28809 (Jan 1 2024 01:58:02 UTC) -> epoch 37689 (Dec 31 2024 23:24:20 UTC)
-// 2025: epoch 37690 (Jan 1 2025 00:23:11 UTC) -> ongoing (fetches latest epoch)
+// 2025: epoch 37690 (Jan 1 2025 00:23:11 UTC) -> epoch 46647 (Dec 31 2025 23:52:19 UTC)
+// 2026: epoch 46648 (Jan 1 2026 00:51:10 UTC) -> ongoing (fetches latest epoch)
 const EPOCH_RANGES = {
   2024: { startEpoch: 28808, endEpoch: 37690 },
-  2025: { startEpoch: 37690, endEpoch: null }, // endEpoch fetched dynamically
+  2025: { startEpoch: 37690, endEpoch: 46648 },
+  2026: { startEpoch: 46648, endEpoch: null }, // endEpoch fetched dynamically
 };
 
 // Hardcoded month boundary epochs (first epoch on or after 1st of each month ~00:00 UTC)
@@ -118,7 +120,12 @@ const MONTH_EPOCHS_2025 = {
   10: 44393, // Oct 1 2025 (actual: 2025-10-01T00:13:04Z)
   11: 45155, // Nov 1 2025 (actual: 2025-11-01T00:55:48Z)
   12: 45889, // Dec 1 2025 (actual: 2025-12-01T00:16:34Z)
-  // Month 13 (Jan 1 2026) will be added when available
+  13: 46648, // End of 2025 / Jan 1 2026 (actual: 2026-01-01T00:51:10Z)
+};
+
+const MONTH_EPOCHS_2026 = {
+  1: 46648, // Jan 1 2026 (actual: 2026-01-01T00:51:10Z)
+  // Remaining months will be added as they become available
 };
 
 /**
@@ -378,7 +385,8 @@ export const fetchStakingRewards = async (NEXUS_API, address, year, granularity,
       epochsToProcess.push(endEpoch);
     } else {
       // Monthly: use hardcoded month boundary epochs for accurate calendar alignment
-      const monthEpochs = year === 2024 ? MONTH_EPOCHS_2024 : MONTH_EPOCHS_2025;
+      const monthEpochs =
+        year === 2024 ? MONTH_EPOCHS_2024 : year === 2025 ? MONTH_EPOCHS_2025 : MONTH_EPOCHS_2026;
 
       // Add month boundaries from 2 to 13 (month 1 is the baseline/start)
       for (let m = 2; m <= 13; m++) {
@@ -388,7 +396,7 @@ export const fetchStakingRewards = async (NEXUS_API, address, year, granularity,
         }
       }
 
-      // For 2025 or incomplete years, ensure we include the current endEpoch if not already
+      // For incomplete years (2026+), ensure we include the current endEpoch if not already
       if (epochsToProcess.length === 0 || epochsToProcess[epochsToProcess.length - 1] < endEpoch) {
         epochsToProcess.push(endEpoch);
       }
