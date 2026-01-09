@@ -12,6 +12,20 @@ The format is inspired by [Keep a Changelog].
 
 <!-- TOWNCRIER -->
 
+## 0.3.0 (2026-01-09)
+
+### Features
+
+- Set 2025 epochs, and add 2026 support
+  ([#11](https://github.com/oasisprotocol/csv-exporter/issues/11))
+
+### Internal Changes
+
+- Use cryptocompare API for prices instead of binance
+  ([#10](https://github.com/oasisprotocol/csv-exporter/issues/10))
+
+  Binance API doesn't work from ci runners since they are hosted in US
+
 ## 0.2.1 (2025-12-19)
 
 ### Bug Fixes and Improvements
